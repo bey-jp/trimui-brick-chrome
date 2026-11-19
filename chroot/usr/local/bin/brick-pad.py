@@ -174,7 +174,7 @@ def start_speech():
     speech_stopping = False
     status_until = 0.0
     speech_release.clear()
-    status.show("等待中…", "正在启动语音识别")
+    status.show("準備中…", "音声認識を起動しています")
     threading.Thread(target=_speech_worker, args=(SPEECH_LANGUAGE,),
                      daemon=True).start()
 
@@ -186,7 +186,7 @@ def finish_speech():
         return
     speech_stopping = True
     speech_release.set()
-    status.show("识别中…", "请稍候")
+    status.show("認識中…", "お待ちください")
 
 
 def _audio_worker(receiver, seconds):
@@ -208,7 +208,7 @@ def cancel_audio():
     if audio_receiver is not None:
         audio_receiver.cancel()
     audio_active = False
-    status.show("已取消", "")
+    status.show("取り消しました", "")
     globals()["status_until"] = time.monotonic() + 1.2
 
 
@@ -222,7 +222,7 @@ def toggle_audio():
     audio_active = True
     status_until = 0.0
     audio_receiver = brick_audio.Receiver()
-    status.show("等待声音…", "电脑扬声器对准掌机 · 再按一次取消")
+    status.show("音を待っています…", "PC のスピーカーを本体に向ける · もう一度押すと取り消し")
     threading.Thread(target=_audio_worker, args=(audio_receiver, AUDIO_SECONDS),
                      daemon=True).start()
 
@@ -244,26 +244,26 @@ def drain_speech(now):
             continue          # cancelled; the late result is not interesting
         if outcome == "audio-ok":
             audio_active = False
-            status.show("正在输入…", payload[:24])
+            status.show("入力中…", payload[:24])
             type_text(payload)
             status_until = now + 0.6
         elif outcome == "audio-err":
             audio_active = False
-            status.show(payload[:14], payload[14:44] or "再试一次")
+            status.show(payload[:14], payload[14:44] or "もう一度")
             status_until = now + 2.5
         elif outcome == "live":
-            status.show("可以说话了", "说完松开 MENU")
+            status.show("話してください", "話し終わったら MENU を離す")
         elif outcome == "interim":
-            status.show("正在聆听…", payload[-24:])
+            status.show("聞いています…", payload[-24:])
         elif outcome == "ok":
             speech_active = False
             speech_stopping = False
             if payload:
-                status.show("正在输入…", payload[:24])
+                status.show("入力中…", payload[:24])
                 type_text(payload)
                 status_until = now + 0.6
             else:
-                status.show("没有听清", "再按住 MENU 试一次")
+                status.show("聞き取れませんでした", "もう一度 MENU を長押し")
                 status_until = now + 1.8
         else:
             speech_active = False
@@ -410,7 +410,7 @@ def press_cancel(pressed):
     if speech_active:
         return
     if keyboard.visible:
-        if pressed:
+        if pressed and not keyboard.cancel():
             keyboard.hide()
         return
     key("Escape", pressed)
@@ -427,9 +427,11 @@ FACE_Y = ecodes.BTN_NORTH    # 307, left-hand button
 buttons = {
     FACE_A: press_confirm,
     FACE_B: press_cancel,
-    FACE_X: lambda pressed: send_keysym(XK.XK_BackSpace) if pressed else None,
+    FACE_X: lambda pressed: (keyboard.delete() or send_keysym(XK.XK_BackSpace))
+    if pressed else None,
     FACE_Y: lambda pressed: mouse(3, pressed),
-    ecodes.BTN_START: lambda pressed: key("Return", pressed),
+    ecodes.BTN_START: lambda pressed: keyboard.commit()
+    if keyboard.composing() else key("Return", pressed),
     ecodes.BTN_SELECT: lambda pressed: key("Tab", pressed),
     ecodes.BTN_TL: lambda pressed: key("Prior", pressed),
     ecodes.BTN_TR: lambda pressed: key("Next", pressed),
@@ -439,6 +441,8 @@ buttons = {
 
 set_root_cursor()
 keyboard.on_speech = start_speech
+keyboard.status = status
+keyboard.type_text = type_text
 keyboard.on_audio = toggle_audio
 
 

@@ -1,0 +1,26 @@
+#!/bin/sh /etc/rc.common
+# 起動時にスワップを有効にし、SMB 共有をマウントする（/etc/init.d/brickboot に置いて enable）
+# SD の System/starts/ は、SD のマウントが 3 秒以内に終わらないと実行されないため、こちらを使う
+START=97
+
+start() {
+	(
+		# SD カードと内部ストレージのマウントを最大 120 秒待つ
+		i=0
+		until grep -q " /mnt/SDCARD " /proc/mounts && grep -q " /mnt/UDISK " /proc/mounts; do
+			i=$((i + 1)); [ $i -ge 120 ] && break
+			sleep 1
+		done
+		# スワップ（1GB、/mnt/UDISK/swapfile。作成は swap-udisk.sh で済ませてある）
+		if [ -f /mnt/UDISK/swapfile ] && ! grep -q "^/mnt/UDISK/swapfile " /proc/swaps; then
+			swapon /mnt/UDISK/swapfile && echo 30 > /proc/sys/vm/swappiness
+		fi
+		# SMB（Wi-Fi 待ちは smb-mount.sh の中で最大 60 秒）
+		[ -x /opt/brick-chrome/smb-mount.sh ] && [ -f /mnt/UDISK/smb-mount.conf ] && \
+			/opt/brick-chrome/smb-mount.sh start
+	) >/dev/null 2>&1 &
+}
+
+stop() {
+	[ -x /opt/brick-chrome/smb-mount.sh ] && /opt/brick-chrome/smb-mount.sh stop
+}

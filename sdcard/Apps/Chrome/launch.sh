@@ -35,5 +35,7 @@ export BRICK_SCALE="$SCALE"
 export BRICK_WIN_W=$(awk -v s="$SCALE" 'BEGIN{printf "%d", 1024/s + 0.5}')
 export BRICK_WIN_H=$(awk -v s="$SCALE" 'BEGIN{printf "%d", 768/s + 0.5}')
 
+export BRICK_SPEECH_LANG=ja-JP
+
 exec /opt/brick-chrome/brick-x11.sh /usr/local/bin/brick-chrome-start \
     "$HOMEPAGE" >> "$LOG" 2>&1

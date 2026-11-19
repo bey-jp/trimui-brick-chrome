@@ -1,0 +1,8 @@
+# /mnt/UDISK/smb-mount.conf（chmod 600）
+# SMB サーバー（Raspberry Pi の Samba、Windows の共有フォルダなど）
+HOST=192.168.1.10
+SMBUSER=yourname
+# rclone obscure でかけたパスワード。README.ja.md の手順で入れる（元に戻せるので他人に見せない）
+SMBPASS=
+# 「共有名/フォルダ:Brick のフォルダ」を空白区切りで。純正アプリは SD の Music / Pictures / Books を見る
+BINDS="share/Music:/mnt/SDCARD/Music/SMB share/Photos:/mnt/SDCARD/Pictures/SMB share/Comics:/mnt/SDCARD/Books/SMB"

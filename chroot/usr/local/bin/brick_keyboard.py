@@ -11,6 +11,8 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 from Xlib import X, XK
 
+import brick_ime
+
 BACKGROUND = (22, 22, 24)
 KEY_FACE = (48, 48, 52)
 KEY_BORDER = (72, 72, 78)
@@ -33,6 +35,9 @@ SHIFT = "\x01"
 CLOSE = "\x02"
 SPEECH = "\x03"
 AUDIO = "\x04"
+MODE = "\x05"
+CJK_FONTS = ("NotoSansCJK-Bold.ttc", "NotoSansCJK-Regular.ttc",
+             "wqy-microhei.ttc", "wqy-zenhei.ttc")
 
 
 class Key:
@@ -63,17 +68,18 @@ def _layout():
                 ("y", "Y"), ("u", "U"), ("i", "I"), ("o", "O"), ("p", "P")]),
         _plain([("a", "A"), ("s", "S"), ("d", "D"), ("f", "F"), ("g", "G"),
                 ("h", "H"), ("j", "J"), ("k", "K"), ("l", "L")])
-        + [Key("退格", "退格", BACKSPACE, BACKSPACE)],
-        [Key("上档", "上档", SHIFT, SHIFT)]
+        + [Key("削除", "削除", BACKSPACE, BACKSPACE)],
+        [Key("Shift", "Shift", SHIFT, SHIFT)]
         + _plain([("z", "Z"), ("x", "X"), ("c", "C"), ("v", "V"), ("b", "B"),
                   ("n", "N"), ("m", "M"), (".", ">"), ("/", "?")]),
-        [Key("-", "_", "-", "_"), Key(":", ";", ":", ";"),
-         Key("空格", "空格", " ", " ", units=2),
+        [Key("A/あ", "A/あ", MODE, MODE),
+         Key("-", "_", "-", "_"), Key(",", ":", ",", ":"),
+         Key("スペース", "スペース", " ", " ", units=2),
          Key(".com", ".com", ".com", ".com"),
-         Key("语音", "语音", SPEECH, SPEECH),
-         Key("声波", "声波", AUDIO, AUDIO),
-         Key("回车", "回车", RETURN, RETURN, units=2),
-         Key("关闭", "关闭", CLOSE, CLOSE)],
+         Key("音声", "音声", SPEECH, SPEECH),
+         Key("音波", "音波", AUDIO, AUDIO),
+         Key("改行", "改行", RETURN, RETURN),
+         Key("閉じる", "閉じる", CLOSE, CLOSE)],
     ]
 
 
@@ -119,6 +125,12 @@ class OnScreenKeyboard:
         self.pixmaps = {}
         self.on_speech = None
         self.on_audio = None
+        self.status = None          # StatusBar, shows the composition
+        self.type_text = None       # Typist.type, for committed Japanese
+        self.kana = False
+        self.romaji = ""
+        self.cands = None
+        self.cand_index = 0
         self._showing_status = False
         self._measure()
 
@@ -142,7 +154,7 @@ class OnScreenKeyboard:
 
     def _font_paths(self):
         latin = _find_font("DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf")
-        return latin, _find_font("wqy-microhei.ttc", "wqy-zenhei.ttc") or latin
+        return latin, _find_font(*CJK_FONTS) or latin
 
     def _fonts(self):
         latin, cjk = self._font_paths()
@@ -163,6 +175,11 @@ class OnScreenKeyboard:
                 draw.rounded_rectangle(key.box, radius=9, fill=face,
                                        outline=border, width=2)
                 label = key.text(shift)
+                if key.value == MODE:
+                    label = "あ" if self.kana else "ABC"
+                if not highlighted and key.value == MODE and self.kana:
+                    draw.rounded_rectangle(key.box, radius=9, fill=LATCHED_FACE,
+                                           outline=border, width=2)
                 font = cjk_font if any(ord(c) > 127 for c in label) else latin_font
                 left, top, right, bottom = draw.textbbox((0, 0), label, font=font)
                 x = key.box[0] + (key.box[2] - key.box[0] - (right - left)) / 2 - left
@@ -182,10 +199,10 @@ class OnScreenKeyboard:
         return pixmap
 
     def _pixmap(self, shift, highlighted):
-        cached = self.pixmaps.get((shift, highlighted))
+        cached = self.pixmaps.get((shift, self.kana, highlighted))
         if cached is None:
             cached = self._upload(self._render(shift, highlighted))
-            self.pixmaps[(shift, highlighted)] = cached
+            self.pixmaps[(shift, self.kana, highlighted)] = cached
         return cached
 
     # ------------------------------------------------------------ x11 window
@@ -234,6 +251,8 @@ class OnScreenKeyboard:
         self._paint()
 
     def hide(self):
+        if self.romaji:
+            self.commit()
         if self.window is not None:
             self.window.unmap()
             self.display.sync()
@@ -304,6 +323,15 @@ class OnScreenKeyboard:
         if not self.visible or self._showing_status:
             return True
         value = self.current().output(self.shift)
+        if value == MODE:
+            self.commit()
+            self.kana = not self.kana
+            self._paint()
+            return True
+        if self.kana and self._compose(value):
+            return True
+        if value not in (SHIFT,):
+            self.commit()
         if value == CLOSE:
             self.hide()
             return False
@@ -327,6 +355,104 @@ class OnScreenKeyboard:
             for character in value:
                 send_char(character)
         return True
+
+
+# ---------------------------------------------------------- japanese input
+
+def _composing(self):
+    return bool(self.romaji)
+
+
+def _preview(self):
+    if self.status is None:
+        return
+    if not self.romaji:
+        self.status.hide()
+        return
+    if self.cands:
+        text = self.cands[self.cand_index]
+        detail = "変換 %d/%d  スペース:次  改行:確定  B:戻す" % (
+            self.cand_index + 1, len(self.cands))
+    else:
+        kana, pending = brick_ime.to_hiragana(self.romaji)
+        text = kana + pending
+        detail = "スペース:変換  改行:確定  削除:1文字消す  B:取り消し"
+    self.status.show(text[-20:], detail)
+
+
+def _compose(self, value):
+    """Kana-mode handling.  Returns True when the key was consumed."""
+    if value == " " and self.romaji:
+        if self.cands is None:
+            kana, pending = brick_ime.to_hiragana(self.romaji, final=True)
+            if self.status is not None:
+                self.status.show(kana + pending, "変換中…")
+            self.cands = brick_ime.candidates(kana + pending)
+            self.cand_index = 0
+        else:
+            self.cand_index = (self.cand_index + 1) % len(self.cands)
+        self._preview()
+        return True
+    if value == BACKSPACE and self.romaji:
+        if self.cands is not None:
+            self.cands = None
+        else:
+            self.romaji = self.romaji[:-1]
+        self._preview()
+        return True
+    if value == RETURN and self.romaji:
+        self.commit()
+        return True
+    if len(value) == 1 and (value.isalpha() or value in "-.,:/'"):
+        if self.cands is not None:
+            self.commit()
+        self.romaji += value.lower()
+        self._preview()
+        return True
+    return False
+
+
+def _commit(self):
+    """Type out the composition (current candidate, or the kana)."""
+    if not self.romaji:
+        return
+    if self.cands:
+        text = self.cands[self.cand_index]
+    else:
+        kana, pending = brick_ime.to_hiragana(self.romaji, final=True)
+        text = kana + pending
+    self.romaji, self.cands, self.cand_index = "", None, 0
+    if self.status is not None:
+        self.status.hide()
+    if text and self.type_text is not None:
+        self.type_text(text)
+
+
+def _cancel(self):
+    """B while composing: drop the conversion, or the whole composition."""
+    if not self.romaji:
+        return False
+    if self.cands is not None:
+        self.cands = None
+    else:
+        self.romaji = ""
+    self._preview()
+    return True
+
+
+def _delete(self):
+    """X while composing deletes like the 削除 key."""
+    if not self.romaji:
+        return False
+    return self._compose(BACKSPACE)
+
+
+OnScreenKeyboard.composing = _composing
+OnScreenKeyboard._preview = _preview
+OnScreenKeyboard._compose = _compose
+OnScreenKeyboard.commit = _commit
+OnScreenKeyboard.cancel = _cancel
+OnScreenKeyboard.delete = _delete
 
 
 class StatusBar:
@@ -356,7 +482,7 @@ class StatusBar:
     def show(self, message, detail=""):
         self._ensure_window()
         latin = _find_font("DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf")
-        cjk = _find_font("wqy-microhei.ttc", "wqy-zenhei.ttc") or latin
+        cjk = _find_font(*CJK_FONTS) or latin
         image = Image.new("RGB", (self.width, self.height), STATUS_BACKGROUND)
         draw = ImageDraw.Draw(image)
         for text, size, top, colour in ((message, 46, 10, STATUS_TEXT),

@@ -1,5 +1,8 @@
 # brick-chrome
 
+> **日本語版のフォーク**です。日本語の説明・変更点は [README.ja.md](README.ja.md) を見てください。
+> Japanese fork of [vhu231/trimui-brick-chrome](https://github.com/vhu231/trimui-brick-chrome) — see [README.ja.md](README.ja.md).
+
 在 **TRIMUI Brick Pro (TG4040)** 的原厂 Tina Linux 上跑一个真正的 Google Chrome：
 装在隔离的 Ubuntu chroot 里，用精简 X11 直接接管掌机屏幕，手柄当鼠标键盘，
 带方向键操作的屏幕键盘和按住 MENU 的语音输入。不替换原厂系统，从原厂应用列表启动，
@@ -220,7 +223,7 @@ export DEBIAN_FRONTEND=noninteractive
 chroot /opt/brick-chrome /usr/bin/apt-get install -y -qq \
   xserver-xorg-core xserver-xorg-video-fbdev xserver-xorg-input-evdev xinit xterm \
   python3-minimal python3-evdev python3-xlib python3-pil python3-websocket \
-  fonts-wqy-microhei fonts-wqy-zenhei alsa-utils dmz-cursor-theme
+  fonts-wqy-microhei fonts-wqy-zenhei fonts-noto-cjk alsa-utils dmz-cursor-theme
 chroot /opt/brick-chrome /usr/bin/apt-get clean
 
 # 白底黑边的鼠标指针。index.theme 是指向 /etc/alternatives 的符号链接，
@@ -283,7 +286,7 @@ SH
 
 ```bash
 tools/brick-scp.exp chroot/brick-x11.sh                       /opt/brick-chrome/brick-x11.sh
-for f in brick-chrome-start brick-pad.py brick_audio.py brick_keyboard.py brick_speech.py brick_typing.py; do
+for f in brick-chrome-start brick-pad.py brick_audio.py brick_ime.py brick_keyboard.py brick_speech.py brick_typing.py; do
   tools/brick-scp.exp "chroot/usr/local/bin/$f" "/opt/brick-chrome/usr/local/bin/$f"
 done
 

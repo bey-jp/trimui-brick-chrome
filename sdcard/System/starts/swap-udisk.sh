@@ -11,6 +11,10 @@ SWAP=/mnt/UDISK/swapfile
 SIZE_MB=1024
 
 grep -q "^$SWAP " /proc/swaps && exit 0
+# At boot this can run before UDISK is mounted.  /mnt/UDISK is then a plain
+# directory on the overlay root, and dd would fill the root filesystem with a
+# swapfile hidden under the later mount.  (Seen on a TG4040: root at 100%.)
+grep -q " /mnt/UDISK " /proc/mounts || exit 0
 if [ ! -f "$SWAP" ]; then
     dd if=/dev/zero of="$SWAP" bs=1M count="$SIZE_MB" 2>/dev/null || exit 0
 fi

@@ -72,8 +72,8 @@ $SHM
 --process-per-site
 --disk-cache-size=67108864
 --disable-features=Translate,MediaRouter,BackForwardCache
---lang=zh-CN
---accept-lang=zh-CN,zh,en
+--lang=ja
+--accept-lang=ja,en-US,en
 --alsa-input-device=hw:0,0
 --alsa-output-device=plughw:0,0
 --user-data-dir=$PROFILE
